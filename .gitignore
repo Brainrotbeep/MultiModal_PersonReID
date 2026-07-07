@@ -1,0 +1,17 @@
+# Generated Features
+outputs/features/
+outputs/fusion/
+outputs/text_embeddings/
+
+# Checkpoints
+Checkpoints/
+vit_multimodal/checkpoints/
+*.pth
+*.pt
+
+# Python cache
+__pycache__/
+*.pyc
+
+# IDE
+.idea/
