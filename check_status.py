@@ -1,11 +1,16 @@
 import json
 
 with open(
-    "outputs/features/gallery_image_names.json",
-    "r"
+        r"/outputs/captions/Occluded_DukeMTMC/query_caption_od.json",
+    encoding="utf-8"
 ) as f:
 
-    names = json.load(f)
+    d = json.load(f)
 
-print(len(names))
-print(names[:5])
+print("Total:", len(d))
+print("First 10 keys:")
+
+for i, k in enumerate(d.keys()):
+    print(k)
+    if i == 9:
+        break

@@ -1,0 +1,6 @@
+Dataset,Accuracy
+cuhk03_release,85.71
+Occluded_DukeMTMC,85.14
+Market-1501,78.97
+DukeMTMC-ReID,86.86
+P-DukeMTMC-reid,89.71

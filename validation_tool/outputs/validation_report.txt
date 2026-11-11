@@ -1,0 +1,22 @@
+Validation Report
+==================================================
+
+Overall Accuracy : 85.65%
+
+Dataset Accuracy
+------------------------------
+cuhk03_release            85.71%
+Occluded_DukeMTMC         85.14%
+Market-1501               78.97%
+DukeMTMC-ReID             86.86%
+P-DukeMTMC-reid           89.71%
+
+Attribute Accuracy
+------------------------------
+age                       58.05%
+gender                    87.29%
+upper_color               91.53%
+upper_type                91.10%
+lower_color               94.92%
+lower_type                91.10%
+footwear_color            85.59%

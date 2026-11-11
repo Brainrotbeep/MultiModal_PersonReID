@@ -2,25 +2,30 @@ import os
 
 import torch
 import torch.nn as nn
-
+import csv
 from torch.utils.data import DataLoader
 from torch.optim import AdamW
 from tqdm import tqdm
 
 import config
+print("Reached train.py")
+if config.IS_OCCLUDED:
+    from dataset_occluded import PersonReIDDataset
+else:
+    from dataset import PersonReIDDataset
 
-from dataset import Market1501Dataset
 from model import MultimodalReID
+from evaluate import evaluate
 
 
 def train():
-
+    print("Entered train()")
     os.makedirs(
         config.CHECKPOINT_DIR,
         exist_ok=True
     )
 
-    dataset = Market1501Dataset(
+    dataset = PersonReIDDataset(
         image_dir=config.TRAIN_DIR,
         caption_file=config.TRAIN_CAPTIONS,
         train=True
@@ -36,7 +41,23 @@ def train():
     model = MultimodalReID().to(
         config.DEVICE
     )
+    print("\n=================================")
+    print("Training Configuration")
+    print("=================================")
 
+    print(f"Dataset          : {config.DATASET}")
+    print(f"Train Directory  : {config.TRAIN_DIR}")
+    print(f"Caption File     : {config.TRAIN_CAPTIONS}")
+    print(f"Checkpoint Dir   : {config.CHECKPOINT_DIR}")
+    print(f"Classes          : {config.NUM_CLASSES}")
+    print(f"Device           : {config.DEVICE}")
+    print(f"Training Samples : {len(dataset)}")
+    print(f"Batches          : {len(train_loader)}")
+    print(f"Batch Size       : {config.BATCH_SIZE}")
+    print(f"Epochs           : {config.EPOCHS}")
+    print(f"Learning Rate    : {config.LEARNING_RATE}")
+
+    print("=================================\n")
     criterion = nn.CrossEntropyLoss()
 
     optimizer = AdamW(
@@ -45,18 +66,12 @@ def train():
         weight_decay=config.WEIGHT_DECAY
     )
 
-    best_acc = 0.0
+    best_map = 0.0
+    loss_history = []
 
-    print(
-        f"\nDevice : {config.DEVICE}"
-    )
-
-    print(
-        f"Training Samples : {len(dataset)}"
-    )
-
-    print(
-        f"Batches : {len(train_loader)}\n"
+    csv_file = os.path.join(
+        config.CHECKPOINT_DIR,
+        "training_loss.csv"
     )
 
     for epoch in range(config.EPOCHS):
@@ -64,14 +79,12 @@ def train():
         model.train()
 
         running_loss = 0.0
-
         correct = 0
-
         total = 0
 
         progress = tqdm(
             train_loader,
-            desc=f"Epoch {epoch+1}/{config.EPOCHS}"
+            desc=f"Epoch {epoch + 1}/{config.EPOCHS}"
         )
 
         for batch in progress:
@@ -97,13 +110,9 @@ def train():
             )
 
             outputs = model(
-
                 images,
-
                 input_ids,
-
                 attention_mask
-
             )
 
             logits = outputs["logits"]
@@ -141,80 +150,110 @@ def train():
                 f"{loss.item():.4f}",
 
                 "Acc":
-                f"{100*correct/total:.2f}%"
+                f"{100 * correct / total:.2f}%"
 
             })
 
         epoch_loss = (
-            running_loss /
-            len(train_loader)
+                running_loss /
+                len(train_loader)
         )
 
         epoch_acc = (
-            correct /
-            total
+                correct /
+                total
         )
 
-        print()
+        loss_history.append([
+            epoch + 1,
+            epoch_loss,
+            epoch_acc
+        ])
 
-        print(
-            f"Epoch [{epoch+1}/{config.EPOCHS}]"
-        )
+        print(f"\nEpoch [{epoch + 1}/{config.EPOCHS}]")
+        print(f"Loss     : {epoch_loss:.4f}")
+        print(f"Accuracy : {epoch_acc:.4f}")
 
-        print(
-            f"Loss     : {epoch_loss:.4f}"
-        )
+        if (
 
-        print(
-            f"Accuracy : {epoch_acc:.4f}"
-        )
+            (epoch + 1) % 10 == 0
 
-        if epoch_acc > best_acc:
+            or
 
-            best_acc = epoch_acc
+            (epoch + 1) == config.EPOCHS
 
-            torch.save(
+        ):
 
-                model.state_dict(),
+            print("\nRunning Evaluation...\n")
 
-                os.path.join(
+            rank1, rank5, rank10, mAP = evaluate(
+                model
+            )
+
+            print(f"Rank-1  : {rank1:.4f}")
+            print(f"Rank-5  : {rank5:.4f}")
+            print(f"Rank-10 : {rank10:.4f}")
+            print(f"mAP     : {mAP:.4f}")
+
+            if mAP > best_map:
+
+                best_map = mAP
+
+                save_path = os.path.join(
 
                     config.CHECKPOINT_DIR,
 
-                    "best_model.pth"
+                    config.MODEL_NAME.replace(
+                        ".pth",
+                        f"_best_epoch{epoch + 1}.pth"
+                    )
 
                 )
 
-            )
+                torch.save(
+                    model.state_dict(),
+                    save_path
+                )
 
-            print(
-                "Best model saved.\n"
-            )
+                print(
+                    f"\nBest model saved : {save_path}"
+                )
+
+            else:
+
+                print(
+                    "\nNo improvement."
+                )
+
+    final_path = os.path.join(
+        config.CHECKPOINT_DIR,
+        config.MODEL_NAME
+    )
 
     torch.save(
-
         model.state_dict(),
+        final_path
+    )
+    with open(csv_file, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow([
+            "Epoch",
+            "Loss",
+            "Accuracy"
+        ])
+        writer.writerows(loss_history)
 
-        os.path.join(
+    print(f"Loss history saved to {csv_file}")
+    print("\n=================================")
+    print("Training Finished")
+    print("=================================\n")
 
-        config.CHECKPOINT_DIR,
-
-        config.MODEL_NAME
-
-        )
-
+    print(
+        f"Best mAP    : {best_map:.4f}"
     )
 
     print(
-        "\nTraining Finished."
-    )
-
-    print(
-        f"Best Accuracy : {best_acc:.4f}"
-    )
-
-    print(
-        "Final model saved."
+        f"Final Model : {final_path}"
     )
 
 

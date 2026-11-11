@@ -1,28 +1,20 @@
 import os
 import json
 
-from captioning.generate_attributes import get_attributes
+from vit_multimodal import config
 
-
-# project root
-
-BASE_DIR = os.path.dirname(
-    os.path.dirname(
-        os.path.abspath(__file__)
-    )
+from captioning.generate_attributes import (
+    get_attributes_batch
 )
 
-train_folder = os.path.join(
-    BASE_DIR,
-    "data",
-    "Market-1501",
-    "query"
-)
 
-output_dir = os.path.join(
-    BASE_DIR,
-    "outputs",
-    "captions"
+BATCH_SIZE = 32
+
+
+query_folder = config.QUERY_DIR
+
+output_dir = os.path.dirname(
+    config.QUERY_CAPTIONS
 )
 
 os.makedirs(
@@ -30,19 +22,32 @@ os.makedirs(
     exist_ok=True
 )
 
-output_file = os.path.join(
-    output_dir,
-    "query_captions.json"
-)
+output_file = config.QUERY_CAPTIONS
 
-print("Query folder:", train_folder)
-print("Exists:", os.path.exists(train_folder))
+print(f"Dataset      : {config.DATASET}")
+print(f"Query Folder : {query_folder}")
 
-images = sorted([
-    img
-    for img in os.listdir(train_folder)
-    if img.endswith(".jpg")
-])
+if not os.path.exists(query_folder):
+
+    raise FileNotFoundError(
+        f"{query_folder} not found."
+    )
+
+images = []
+
+for root, _, files in os.walk(query_folder):
+
+    for img in sorted(files):
+
+        if img.lower().endswith(
+            config.IMAGE_EXTENSIONS
+        ):
+
+            images.append(
+                os.path.join(root, img)
+            )
+
+print(f"Total Images : {len(images)}")
 
 if os.path.exists(output_file):
 
@@ -55,44 +60,86 @@ if os.path.exists(output_file):
         captions = json.load(f)
 
     print(
-        f"Loaded {len(captions)} existing captions"
+        f"Loaded {len(captions)} existing captions."
     )
 
 else:
 
     captions = {}
 
+
+    print("Starting fresh.")
+
+remaining_images = []
+
+for path in images:
+
+    if config.DATASET in [
+        "P-DukeMTMC-reid",
+        "Occluded_REID"
+    ]:
+
+        img_key = os.path.relpath(
+            path,
+            query_folder
+        ).replace("\\", "/")
+
+    else:
+
+        img_key = os.path.basename(path)
+
+    if img_key not in captions:
+
+        remaining_images.append(
+            (path, img_key)
+        )
+
+print(f"Remaining Images : {len(remaining_images)}")
+
+total_batches = (
+    len(remaining_images)
+    + BATCH_SIZE
+    - 1
+) // BATCH_SIZE
+
+for batch_idx in range(total_batches):
+
+    batch = remaining_images[
+        batch_idx * BATCH_SIZE:
+        (batch_idx + 1) * BATCH_SIZE
+    ]
+
+    batch_paths = [
+        p[0]
+        for p in batch
+    ]
+
     print(
-        "Starting fresh"
+        f"\nProcessing Batch "
+        f"{batch_idx + 1}/{total_batches}"
     )
 
-print(f"\nTotal images: {len(images)}\n")
+    try:
 
+        batch_results = get_attributes_batch(
+            batch_paths
+        )
 
-for idx, img in enumerate(images):
+    except Exception as e:
 
-    # skip images already processed
+        print(e)
 
-    if img in captions:
         continue
 
-    path = os.path.join(
-        train_folder,
-        img
-    )
+    for path, img_key in batch:
 
-    print(
-        f"[{idx + 1}/{len(images)}] Processing:",
-        img
-    )
+        if path in batch_results:
 
-    attrs = get_attributes(path)
+            captions[img_key] = batch_results[path]
 
-    captions[img] = attrs
+            print(f"✓ {img_key}")
 
-    # save every 500 images
-
-    if (idx + 1) % 500 == 0:
+    if len(captions) % 250 < BATCH_SIZE:
 
         with open(
             output_file,
@@ -107,11 +154,8 @@ for idx, img in enumerate(images):
             )
 
         print(
-            f"\n✅ Saved progress at {len(captions)} images\n"
+            f"\nSaved {len(captions)} captions.\n"
         )
-
-
-# final save
 
 with open(
     output_file,
@@ -125,6 +169,9 @@ with open(
         indent=4
     )
 
-print(
-    f"\n✅ Finished. Saved: {output_file}"
-)
+print("\n================================")
+print("Caption Generation Finished")
+print("================================\n")
+
+print(f"Saved : {output_file}")
+print(f"Total Captions : {len(captions)}")

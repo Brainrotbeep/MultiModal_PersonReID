@@ -11,7 +11,7 @@ from transformers import DistilBertTokenizer
 import config
 
 
-class Market1501Dataset(Dataset):
+class PersonReIDDataset(Dataset):
 
     def __init__(
         self,
@@ -34,30 +34,32 @@ class Market1501Dataset(Dataset):
         self.processor = ViTImageProcessor.from_pretrained(
             config.IMAGE_MODEL
         )
+
         self.tokenizer = DistilBertTokenizer.from_pretrained(
             config.TEXT_MODEL
         )
+
         self.samples = []
 
         pids = set()
 
         for img_name in sorted(os.listdir(image_dir)):
 
-            if not img_name.endswith(".jpg"):
+            if not (
+                img_name.endswith(".jpg")
+                or
+                img_name.endswith(".png")
+            ):
                 continue
 
-            pid = int(
-                img_name.split("_")[0]
+            if img_name not in self.captions:
+                continue
+
+            pid, cam = self.parse_filename(
+                img_name
             )
 
             if pid == -1:
-                continue
-
-            cam = int(
-                img_name.split("_")[1][1]
-            )
-
-            if img_name not in self.captions:
                 continue
 
             self.samples.append({
@@ -76,6 +78,7 @@ class Market1501Dataset(Dataset):
                 "cam": cam,
 
                 "name": img_name
+
             })
 
             pids.add(pid)
@@ -89,7 +92,35 @@ class Market1501Dataset(Dataset):
                 for idx, pid in enumerate(
                     sorted(pids)
                 )
+
             }
+
+    def parse_filename(
+        self,
+        img_name
+    ):
+
+        if config.DATASET == "cuhk03_release":
+
+            pid = int(
+                img_name.split("_")[0]
+            )
+
+            cam = int(
+                img_name.split("_")[1]
+            )
+
+        else:
+
+            pid = int(
+                img_name.split("_")[0]
+            )
+
+            cam = int(
+                img_name.split("_")[1][1]
+            )
+
+        return pid, cam
 
     def __len__(self):
 
@@ -97,7 +128,10 @@ class Market1501Dataset(Dataset):
             self.samples
         )
 
-    def make_sentence(self, attrs):
+    def make_sentence(
+        self,
+        attrs
+    ):
 
         return (
 
@@ -109,7 +143,7 @@ class Market1501Dataset(Dataset):
 
             f"Lower clothing: {attrs['lower_color']} {attrs['lower_type']}. "
 
-            f"Footwear: {attrs['footwear']}."
+            f"Footwear Color: {attrs['footwear_color']}."
 
         )
 
@@ -135,12 +169,19 @@ class Market1501Dataset(Dataset):
         caption = self.make_sentence(
             sample["caption"]
         )
+
         tokens = self.tokenizer(
+
             caption,
+
             padding="max_length",
+
             truncation=True,
+
             max_length=config.MAX_TEXT_LENGTH,
+
             return_tensors="pt"
+
         )
 
         if self.train:
